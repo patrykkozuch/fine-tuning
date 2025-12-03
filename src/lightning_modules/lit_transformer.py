@@ -39,7 +39,7 @@ class LitTransformer(L.LightningModule):
 
         output = self.model(inputs, mask)
         loss = nn.functional.cross_entropy(
-            inputs=output.reshape(-1, output.size(-1)),
+            input=output.reshape(-1, output.size(-1)),
             target=targets.reshape(-1),
             label_smoothing=0.1,
             ignore_index=IGNORE_INDEX
