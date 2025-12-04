@@ -1,9 +1,12 @@
+from collections import Counter
+
 import lightning.pytorch as pl
+import torch
 from datasets import load_dataset, DatasetDict
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizerBase
 
-EXAMPLE_PATTERN = "%s<MEANING>%s<EXAMPLE>%s"
+EXAMPLE_PATTERN = "%s<MEANING>%s"
 
 
 def tokenize(tokenizer, texts):
@@ -26,12 +29,21 @@ class LitClassificationDataModule(pl.LightningDataModule):
         self.dataset_path = dataset_path
         self.tokenizer = tokenizer
         self.splits = None
+        self.class_weights_train = None
+
+        # Precompute class weights immediately so they're available after init
+        try:
+            self.class_weights_train = self._compute_class_weights()
+        except Exception:
+            # If computation fails for any reason (e.g. dataset not accessible),
+            # leave class_weights_train as None and allow setup to try again.
+            self.class_weights_train = None
 
     def setup(self, stage: str = None):
         ds = (
             load_dataset(self.dataset_path)
             .filter(lambda x: x['znaczenie wyrazów slangowych'] is not None)
-            .map(lambda x: {'text': EXAMPLE_PATTERN % (x['słowo slangowe'], x['znaczenie wyrazów slangowych'], x['tekst']) ,})
+            .map(lambda x: {'text': EXAMPLE_PATTERN % (x['słowo slangowe'][:128], x['znaczenie wyrazów slangowych'][:256]) ,})
             .map(
                 lambda x: tokenize(self.tokenizer, x),
                 batched=True,
@@ -52,6 +64,47 @@ class LitClassificationDataModule(pl.LightningDataModule):
             'validation': ds_devtest['train'],
             'test': ds_devtest['test']
         }).with_format('torch')
+
+
+    def _compute_class_weights(self):
+        """
+        Load raw dataset train split, filter out entries with missing meaning and compute class weights.
+        Returns a torch.FloatTensor of shape (n_classes,).
+        """
+        ds = load_dataset(self.dataset_path)
+        if 'train' not in ds:
+            return torch.tensor([], dtype=torch.float)
+
+        train = ds['train']
+        labels = []
+        # iterate over examples, filter same way as in setup
+        for item in train:
+            if item.get('znaczenie wyrazów slangowych') is None:
+                continue
+            # collect 'sentyment' field as int
+            val = item.get('sentyment')
+            if val is None:
+                continue
+            labels.append(int(val))
+
+        if len(labels) == 0:
+            return torch.tensor([], dtype=torch.float)
+
+        labels_tensor = torch.tensor(labels, dtype=torch.long)
+        counts = torch.bincount(labels_tensor)
+
+        n_samples = labels_tensor.size(0)
+        n_classes = counts.numel()
+
+        counts_float = counts.float()
+        zero_mask = counts_float == 0
+        safe_counts = counts_float.clone()
+        safe_counts[zero_mask] = 1.0
+
+        class_weights = n_samples / (n_classes * safe_counts)
+        class_weights[zero_mask] = 0.0
+
+        return class_weights.float()
 
     def train_dataloader(self):
         return DataLoader(

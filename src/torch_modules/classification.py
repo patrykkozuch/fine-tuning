@@ -10,15 +10,17 @@ class ClassificationTransformer(nn.Module):
         self.classifier = nn.Linear(d_model, num_classes)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
-        # Get the output from the base transformer
         attention_mask = prepare_mask(mask)
         transformer_output = self.base_transformer(x, attention_mask)
 
-        expanded = mask.unsqueeze(-1).expand(transformer_output.size())
-        masked_output = transformer_output * expanded
-        hidden_state = masked_output.sum(dim=1) / expanded.sum(dim=1)
+        # Mean pooling
+        expanded_mask = mask.unsqueeze(-1)  # (batch, seq_len, 1)
+        masked_output = transformer_output * expanded_mask
 
-        # Pass through the classifier
-        logits = self.classifier(hidden_state)  # (batch, num_classes)
+        sum_embeddings = masked_output.sum(dim=1)  # (batch, hidden_dim)
+        sum_mask = mask.sum(dim=1, keepdim=True)  # (batch, 1)
 
+        hidden_state = sum_embeddings / sum_mask.clamp(min=1e-9)
+
+        logits = self.classifier(hidden_state)
         return logits

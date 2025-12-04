@@ -47,7 +47,7 @@ def main():
         dropout_rate=cfg["dropout_rate"]
     )
 
-    checkpoint = torch.load('checkpoints/epoch=1-step=1020.ckpt')
+    checkpoint = torch.load('checkpoints_pretraining/epoch=9-step=121470.ckpt')
 
     new_state_dict = {}
     for param in checkpoint['state_dict'].keys():
@@ -56,9 +56,6 @@ def main():
             new_state_dict[new_key] = checkpoint['state_dict'][param]
 
     model.load_state_dict(new_state_dict)
-
-    for param in model.parameters():
-        param.requires_grad = False
 
     classification_model = ClassificationTransformer(
         base_transformer=model,
@@ -69,8 +66,11 @@ def main():
     classifier = LitClassifier(
         model=classification_model,
         cfg=cfg,
-        lr=1e-3
+        lr=1e-4,
+        class_weights=datamodule.class_weights_train
     )
+
+    print(datamodule.class_weights_train)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     model_checkpoint = ModelCheckpoint('checkpoints_classifier/', monitor='val_f1', save_top_k=1, mode='max')
@@ -81,7 +81,7 @@ def main():
     )
 
     trainer = Trainer(
-        max_epochs=50,
+        max_epochs=500,
         devices='auto',
         accelerator='auto',
         log_every_n_steps=1,

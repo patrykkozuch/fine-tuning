@@ -14,6 +14,7 @@ IGNORE_INDEX = -100
 class LitTransformer(L.LightningModule):
     def __init__(self, model: nn.Module, cfg: dict):
         super().__init__()
+        self.save_hyperparameters()
         self.model = model
         self.cfg = cfg
 
