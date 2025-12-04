@@ -1884,7 +1884,7 @@ wheels = [
 [[package]]
 name = "nlp-agh"
 version = "0.1.1"
-source = { git = "https://github.com/patrykkozuch/NLP_AGH.git#a68e35198c79d520b113b341cdb4a30fba5f264a" }
+source = { git = "https://github.com/patrykkozuch/NLP_AGH.git#ec614ce55a4f1b84ef075a0eed62700fa5b3220c" }
 dependencies = [
     { name = "accelerate" },
     { name = "datasets" },

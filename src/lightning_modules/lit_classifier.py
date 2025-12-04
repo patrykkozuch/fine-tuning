@@ -20,14 +20,14 @@ class LitClassifier(L.LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr)
-        scheduler = TransformerLRScheduler(optimizer, d_model=self.cfg["d_model"], warmup_steps=1000)
+        # scheduler = TransformerLRScheduler(optimizer, d_model=self.cfg["d_model"], warmup_steps=1000)
         return {
             "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "step",
-                "frequency": 1
-            },
+            # "lr_scheduler": {
+            #     "scheduler": scheduler,
+            #     "interval": "step",
+            #     "frequency": 1
+            # },
         }
 
     def _batch_calculate_loss(self, batch: dict[str, Any]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -43,7 +43,7 @@ class LitClassifier(L.LightningModule):
         f1 = torchmetrics.functional.f1_score(
             preds,
             targets,
-            num_classes=5,
+            num_classes=3,
             average='macro',
             task='multiclass'
         )
@@ -51,7 +51,7 @@ class LitClassifier(L.LightningModule):
         accuracy = torchmetrics.functional.accuracy(
             preds,
             targets,
-            num_classes=5,
+            num_classes=3,
             task='multiclass'
         )
 

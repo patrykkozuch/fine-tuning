@@ -5,15 +5,15 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
 from nlp_agh.transformer.transformer import Transformer
 
-from src.lightning_modules.lit_completion_datamodule import LitCompletionDataModule
-from src.lightning_modules.lit_transformer import LitTransformer
-from src.torch_modules.generation import GenerationTransformer
+from src.lightning_modules.lit_classification_datamodule import LitClassificationDataModule
+from src.lightning_modules.lit_classifier import LitClassifier
+from src.torch_modules.classification import ClassificationTransformer
 from src.utils import load_tokenizer
 
 torch.set_float32_matmul_precision('medium')
 
 base_cfg = {
-    "batch_size": 128,
+    "batch_size": 256,
     "max_len": 256,
     "n_blocks": 4,
     "num_heads": 4,
@@ -30,8 +30,9 @@ base_cfg = {
     "slurm_job_id": os.getenv('SLURM_JOB_ID', 'local_run'),
 }
 
+
 tokenizer = load_tokenizer()
-datamodule = LitCompletionDataModule(base_cfg['batch_size'], 'data/plwiki.jsonl.zst', tokenizer)
+datamodule = LitClassificationDataModule(base_cfg['batch_size'], 'jziebura/polish_youth_slang_classification', tokenizer)
 
 def main():
     cfg = base_cfg.copy()
@@ -46,23 +47,37 @@ def main():
         dropout_rate=cfg["dropout_rate"]
     )
 
-    generation_model = GenerationTransformer(
+    checkpoint = torch.load('checkpoints/epoch=1-step=1020.ckpt')
+
+    new_state_dict = {}
+    for param in checkpoint['state_dict'].keys():
+        if param.startswith('model.base_transformer.'):
+            new_key = param[len('model.base_transformer.'):]
+            new_state_dict[new_key] = checkpoint['state_dict'][param]
+
+    model.load_state_dict(new_state_dict)
+
+    for param in model.parameters():
+        param.requires_grad = False
+
+    classification_model = ClassificationTransformer(
         base_transformer=model,
-        vocab_size=len(tokenizer),
-        d_model=cfg["d_model"]
+        d_model=cfg["d_model"],
+        num_classes=3,
     )
 
-    classifier = LitTransformer(
-        model=generation_model,
-        cfg=cfg
+    classifier = LitClassifier(
+        model=classification_model,
+        cfg=cfg,
+        lr=1e-3
     )
 
-    lr_monitor = LearningRateMonitor(logging_interval='step')
-    model_checkpoint = ModelCheckpoint('checkpoints_pretraining/', monitor='val_loss', save_top_k=1, mode='min')
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
+    model_checkpoint = ModelCheckpoint('checkpoints_classifier/', monitor='val_f1', save_top_k=1, mode='max')
     early_stopping = EarlyStopping(
-        monitor='val_loss',
-        patience=3,
-        mode='min'
+        monitor='val_f1',
+        patience=10,
+        mode='max'
     )
 
     trainer = Trainer(
@@ -75,7 +90,6 @@ def main():
         callbacks=[early_stopping, lr_monitor, model_checkpoint]
     )
     trainer.fit(model=classifier, datamodule=datamodule)
-
 
 if __name__ == "__main__":
     main()

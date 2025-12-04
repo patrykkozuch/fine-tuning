@@ -4,25 +4,21 @@ from nlp_agh.transformer.dataset import prepare_mask
 
 
 class ClassificationTransformer(nn.Module):
-    def __init__(self, base_transformer: nn.Module, vocab_size: int, num_classes: int):
+    def __init__(self, base_transformer: nn.Module, d_model: int, num_classes: int):
         super().__init__()
         self.base_transformer = base_transformer
-        self.classifier = nn.Linear(vocab_size, num_classes)
+        self.classifier = nn.Linear(d_model, num_classes)
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
         # Get the output from the base transformer
         attention_mask = prepare_mask(mask)
-        transformer_output = self.base_transformer(x, attention_mask)  # (batch, seq_len, d_model)
+        transformer_output = self.base_transformer(x, attention_mask)
 
-        sequence_lengths = mask.sum(dim=1)
-        batch_indices = torch.arange(transformer_output.size(0), device=transformer_output.device)
-        last_token_indices = (sequence_lengths - 1)
-        print(sequence_lengths)
-
-        # Use the output of the last token for classification
-        last_token_output = transformer_output[batch_indices, last_token_indices, :]  # (batch, d_model)
+        expanded = mask.unsqueeze(-1).expand(transformer_output.size())
+        masked_output = transformer_output * expanded
+        hidden_state = masked_output.sum(dim=1) / expanded.sum(dim=1)
 
         # Pass through the classifier
-        logits = self.classifier(last_token_output)  # (batch, num_classes)
+        logits = self.classifier(hidden_state)  # (batch, num_classes)
 
         return logits

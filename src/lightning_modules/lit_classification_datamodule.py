@@ -15,7 +15,7 @@ def tokenize(tokenizer, texts):
         truncation=True,
         padding='max_length',
         padding_side='right',
-        max_length=512,
+        max_length=256,
     )
 
 
@@ -30,6 +30,8 @@ class LitClassificationDataModule(pl.LightningDataModule):
     def setup(self, stage: str = None):
         ds = (
             load_dataset(self.dataset_path)
+            .filter(lambda x: x['znaczenie wyrazów slangowych'] is not None)
+            .map(lambda x: {'text': EXAMPLE_PATTERN % (x['słowo slangowe'], x['znaczenie wyrazów slangowych'], x['tekst']) ,})
             .map(
                 lambda x: tokenize(self.tokenizer, x),
                 batched=True,
@@ -37,7 +39,8 @@ class LitClassificationDataModule(pl.LightningDataModule):
                 remove_columns=['text'],
                 desc='Tokenizing'
             )
-            .rename_column('label', 'targets')
+            .rename_column('sentyment', 'targets')
+            .select_columns(['input_ids', 'attention_mask', 'targets'])
             .with_format('torch')
         )
 
