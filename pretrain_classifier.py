@@ -32,7 +32,7 @@ base_cfg = {
 }
 
 tokenizer = load_tokenizer()
-datamodule = LitCompletionDataModule(base_cfg['batch_size'], 'data/forum_elektroda_pl_corpus.jsonl.zst', tokenizer)
+datamodule = LitCompletionDataModule(base_cfg['batch_size'], 'data/train.jsonl.zst', tokenizer)
 
 def main():
     cfg = base_cfg.copy()
