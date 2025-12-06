@@ -3,6 +3,7 @@ import os
 import torch
 from lightning import Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, EarlyStopping, ModelCheckpoint
+from lightning.pytorch.loggers.wandb import WandbLogger
 from nlp_agh.transformer.transformer import Transformer
 
 from src.lightning_modules.lit_classification_datamodule import LitClassificationDataModule
@@ -72,7 +73,8 @@ def main():
         freeze_base_epochs=20
     )
 
-    print(datamodule.class_weights_train)
+    wandb_logger = WandbLogger(project='transformer_classification', tags=['classification'])
+    wandb_logger.watch(classifier, log_freq=1000)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     model_checkpoint = ModelCheckpoint('checkpoints_classifier/', monitor='val_f1', save_top_k=1, mode='max')
@@ -89,6 +91,7 @@ def main():
         log_every_n_steps=1,
         precision='bf16-mixed',
         gradient_clip_val=1.0,
+        logger=wandb_logger,
         callbacks=[early_stopping, lr_monitor, model_checkpoint]
     )
     trainer.fit(model=classifier, datamodule=datamodule)

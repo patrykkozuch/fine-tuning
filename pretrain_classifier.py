@@ -58,6 +58,9 @@ def main():
         cfg=cfg
     )
 
+    wandb_logger = WandbLogger(project='transformer_classification', tags=['pretraining'])
+    wandb_logger.watch(classifier, log_freq=2500)
+
     lr_monitor = LearningRateMonitor(logging_interval='step')
     model_checkpoint = ModelCheckpoint('checkpoints_pretraining/', monitor='val_loss', save_top_k=1, mode='min')
     early_stopping = EarlyStopping(
@@ -66,9 +69,6 @@ def main():
         mode='min'
     )
 
-    logger = WandbLogger(tags=['pretraining'])
-    logger.watch(classifier, log_freq=2500)
-
     trainer = Trainer(
         max_epochs=50,
         devices='auto',
@@ -76,7 +76,7 @@ def main():
         log_every_n_steps=1,
         precision='bf16-mixed',
         gradient_clip_val=1.0,
-        logger=logger,
+        logger=wandb_logger,
         callbacks=[early_stopping, lr_monitor, model_checkpoint]
     )
     trainer.fit(model=classifier, datamodule=datamodule)
