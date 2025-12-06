@@ -14,13 +14,13 @@ from src.utils import load_tokenizer
 torch.set_float32_matmul_precision('medium')
 
 base_cfg = {
-    "batch_size": 128,
+    "batch_size": 256,
     "max_len": 256,
-    "n_blocks": 4,
+    "n_blocks": 6,
     "num_heads": 4,
-    "dropout_rate": 0.2,
+    "dropout_rate": 0.1,
     "d_model": 256,
-    "d_ff": 512,
+    "d_ff": 1024,
     "log_freq": 1000,
     "prompt_log_freq": 5000,
     "val_freq": 10000,
@@ -32,7 +32,7 @@ base_cfg = {
 }
 
 tokenizer = load_tokenizer()
-datamodule = LitCompletionDataModule(base_cfg['batch_size'], 'data/plwiki.jsonl.zst', tokenizer)
+datamodule = LitCompletionDataModule(base_cfg['batch_size'], 'data/forum_elektroda_pl_corpus.jsonl.zst', tokenizer)
 
 def main():
     cfg = base_cfg.copy()
