@@ -13,13 +13,13 @@ from src.utils import load_tokenizer
 torch.set_float32_matmul_precision('medium')
 
 base_cfg = {
-    "batch_size": 256,
+    "batch_size": 64,
     "max_len": 256,
-    "n_blocks": 4,
+    "n_blocks": 6,
     "num_heads": 4,
-    "dropout_rate": 0.2,
+    "dropout_rate": 0.1,
     "d_model": 256,
-    "d_ff": 512,
+    "d_ff": 1024,
     "log_freq": 1000,
     "prompt_log_freq": 5000,
     "val_freq": 10000,
@@ -61,13 +61,15 @@ def main():
         base_transformer=model,
         d_model=cfg["d_model"],
         num_classes=3,
+        classifier_dropout=0.2
     )
 
     classifier = LitClassifier(
         model=classification_model,
         cfg=cfg,
-        lr=1e-4,
-        class_weights=datamodule.class_weights_train
+        lr=1e-4
+        class_weights=datamodule.class_weights_train,
+        freeze_base_epochs=20
     )
 
     print(datamodule.class_weights_train)
@@ -76,7 +78,7 @@ def main():
     model_checkpoint = ModelCheckpoint('checkpoints_classifier/', monitor='val_f1', save_top_k=1, mode='max')
     early_stopping = EarlyStopping(
         monitor='val_f1',
-        patience=10,
+        patience=15
         mode='max'
     )
 

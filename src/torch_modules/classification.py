@@ -4,10 +4,15 @@ from nlp_agh.transformer.dataset import prepare_mask
 
 
 class ClassificationTransformer(nn.Module):
-    def __init__(self, base_transformer: nn.Module, d_model: int, num_classes: int):
+    def __init__(self, base_transformer: nn.Module, d_model: int, num_classes: int, classifier_dropout: float = 0.1):
         super().__init__()
         self.base_transformer = base_transformer
-        self.classifier = nn.Linear(d_model, num_classes)
+        self.classifier = nn.Sequential(
+            nn.Linear(d_model, d_model),
+            nn.GELU(),
+            nn.Dropout(classifier_dropout),
+            nn.Linear(d_model, num_classes)
+        )
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
         attention_mask = prepare_mask(mask)
