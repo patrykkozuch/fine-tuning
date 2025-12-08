@@ -1,3 +1,4 @@
+import random
 from collections import Counter
 
 import lightning.pytorch as pl
@@ -6,20 +7,40 @@ from datasets import load_dataset, DatasetDict
 from torch.utils.data import DataLoader
 from transformers import PreTrainedTokenizerBase
 
-EXAMPLE_PATTERN = "%s<MEANING>%s"
-
-
 def tokenize(tokenizer, texts):
     return tokenizer(
-        texts['text'],
-        add_special_tokens=True,
+        texts,
+        add_special_tokens=False,
         return_tensors=None,
-        return_attention_mask=True,
+        return_attention_mask=False,
         truncation=True,
-        padding='max_length',
-        padding_side='right',
         max_length=256,
     )
+
+
+def collate_fn(tokenizer: PreTrainedTokenizerBase, batch: list[dict]):
+    final_batch = {'input_ids': [], 'targets': [], 'attention_mask': []}
+    for item in batch:
+        word, meaning, text = tokenize(tokenizer, [item['word'], item['meaning'], item['text']])['input_ids']
+
+        input_ids = [tokenizer.bos_token_id]
+        input_ids += word + [tokenizer.convert_tokens_to_ids("<MEANING>")]
+        input_ids += meaning[:128 - len(input_ids) - 2]
+        input_ids += [tokenizer.convert_tokens_to_ids("<EXAMPLE>")]
+        input_ids += text[:128 - len(input_ids) - 1]
+        input_ids += [tokenizer.eos_token_id]
+        padding_len = 128 - len(input_ids)
+        input_ids += [tokenizer.pad_token_id] * padding_len
+
+        attention_mask = [1] * (128 - padding_len) + [0] * padding_len
+
+        final_batch['input_ids'].append(input_ids)
+        final_batch['targets'].append(item['targets'])
+        final_batch['attention_mask'].append(attention_mask)
+
+    final_batch = {k: torch.tensor(v, dtype=torch.long) for k, v in final_batch.items()}
+
+    return final_batch
 
 
 class LitClassificationDataModule(pl.LightningDataModule):
@@ -28,90 +49,39 @@ class LitClassificationDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.dataset_path = dataset_path
         self.tokenizer = tokenizer
-        self.splits = None
+        self.splits = self.load_dataset()
         self.class_weights_train = None
 
         # Precompute class weights immediately so they're available after init
         try:
-            self.class_weights_train = self._compute_class_weights()
+            self.class_weights_train = self._compute_class_weights('train')
         except Exception:
-            # If computation fails for any reason (e.g. dataset not accessible),
-            # leave class_weights_train as None and allow setup to try again.
             self.class_weights_train = None
 
-    def setup(self, stage: str = None):
-        ds = (
-            load_dataset(self.dataset_path)
-            .filter(lambda x: x['znaczenie wyrazów slangowych'] is not None)
-            .map(lambda x: {'text': EXAMPLE_PATTERN % (x['słowo slangowe'][:128], x['znaczenie wyrazów slangowych'][:256]) ,})
-            .map(
-                lambda x: tokenize(self.tokenizer, x),
-                batched=True,
-                num_proc=20,
-                remove_columns=['text'],
-                desc='Tokenizing'
-            )
-            .rename_column('sentyment', 'targets')
-            .select_columns(['input_ids', 'attention_mask', 'targets'])
-            .with_format('torch')
-        )
+    def load_dataset(self):
+        ds = load_dataset('json', data_files=[self.dataset_path]).rename_column('label', 'targets').class_encode_column('targets')
 
-        ds_train_devtest = ds['train'].train_test_split(test_size=0.2, seed=42)
-        ds_devtest = ds_train_devtest['test'].train_test_split(test_size=0.5, seed=42)
+        # Use stratified split to maintain class distribution
+        ds_train_devtest = ds['train'].train_test_split(test_size=0.1, seed=42, stratify_by_column='targets')
 
-        self.splits = DatasetDict({
+        return DatasetDict({
             'train': ds_train_devtest['train'],
-            'validation': ds_devtest['train'],
-            'test': ds_devtest['test']
+            'validation': ds_train_devtest['test'],
         }).with_format('torch')
 
-
-    def _compute_class_weights(self):
-        """
-        Load raw dataset train split, filter out entries with missing meaning and compute class weights.
-        Returns a torch.FloatTensor of shape (n_classes,).
-        """
-        ds = load_dataset(self.dataset_path)
-        if 'train' not in ds:
-            return torch.tensor([], dtype=torch.float)
-
-        train = ds['train']
-        labels = []
-        # iterate over examples, filter same way as in setup
-        for item in train:
-            if item.get('znaczenie wyrazów slangowych') is None:
-                continue
-            # collect 'sentyment' field as int
-            val = item.get('sentyment')
-            if val is None:
-                continue
-            labels.append(int(val))
-
-        if len(labels) == 0:
-            return torch.tensor([], dtype=torch.float)
-
-        labels_tensor = torch.tensor(labels, dtype=torch.long)
-        counts = torch.bincount(labels_tensor)
-
-        n_samples = labels_tensor.size(0)
-        n_classes = counts.numel()
-
-        counts_float = counts.float()
-        zero_mask = counts_float == 0
-        safe_counts = counts_float.clone()
-        safe_counts[zero_mask] = 1.0
-
-        class_weights = n_samples / (n_classes * safe_counts)
-        class_weights[zero_mask] = 0.0
-
-        return class_weights.float()
+    def _compute_class_weights(self, split: str = 'train'):
+        ds = self.splits[split].to_pandas()
+        label_counts = Counter(ds['targets'])
+        num_classes = len(label_counts)
+        class_weights = [1 / label_counts[i] for i in range(num_classes)]
+        return torch.tensor(class_weights, dtype=torch.float) / sum(class_weights)
 
     def train_dataloader(self):
         return DataLoader(
             self.splits['train'],
             batch_size=self.batch_size,
             num_workers=8,
-            shuffle=True
+            collate_fn=lambda batch: collate_fn(self.tokenizer, batch)
         )
 
     def val_dataloader(self):
@@ -119,4 +89,5 @@ class LitClassificationDataModule(pl.LightningDataModule):
             self.splits['validation'],
             batch_size=self.batch_size,
             num_workers=2,
+            collate_fn=lambda batch: collate_fn(self.tokenizer, batch)
         )

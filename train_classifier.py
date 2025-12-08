@@ -15,16 +15,16 @@ torch.set_float32_matmul_precision('medium')
 
 base_cfg = {
     "batch_size": 64,
-    "max_len": 256,
-    "n_blocks": 6,
+    "max_len": 128,
+    "n_blocks": 2,
     "num_heads": 4,
-    "dropout_rate": 0.1,
+    "dropout_rate": 0.5,
     "d_model": 256,
-    "d_ff": 1024,
+    "d_ff": 512,
     "log_freq": 1000,
     "prompt_log_freq": 5000,
     "val_freq": 10000,
-    "epoches": 1000,
+    "epoches": 100,
     "chkpoint_freq": 5000,
     "gradient_accumulation_steps": 1,
     "tokenizer": 'speakleash/Bielik-1.5B-v3',
@@ -33,7 +33,7 @@ base_cfg = {
 
 
 tokenizer = load_tokenizer()
-datamodule = LitClassificationDataModule(base_cfg['batch_size'], 'jziebura/polish_youth_slang_classification', tokenizer)
+datamodule = LitClassificationDataModule(base_cfg['batch_size'], 'polish_youth_slang_classification_filtered_last.json.zst', tokenizer)
 
 def main():
     cfg = base_cfg.copy()
@@ -48,7 +48,7 @@ def main():
         dropout_rate=cfg["dropout_rate"]
     )
 
-    checkpoint = torch.load('checkpoints_pretraining/epoch=9-step=121470.ckpt')
+    checkpoint = torch.load('checkpoints_pretraining/small_best.ckpt')
 
     new_state_dict = {}
     for param in checkpoint['state_dict'].keys():
@@ -62,15 +62,15 @@ def main():
         base_transformer=model,
         d_model=cfg["d_model"],
         num_classes=3,
-        classifier_dropout=0.2
+        classifier_dropout=0.3
     )
 
     classifier = LitClassifier(
         model=classification_model,
         cfg=cfg,
-        lr=1e-4
+        lr=1e-4,
         class_weights=datamodule.class_weights_train,
-        freeze_base_epochs=20
+        freeze_base_epochs=0
     )
 
     wandb_logger = WandbLogger(project='transformer_classification', tags=['classification'])
@@ -80,12 +80,12 @@ def main():
     model_checkpoint = ModelCheckpoint('checkpoints_classifier/', monitor='val_f1', save_top_k=1, mode='max')
     early_stopping = EarlyStopping(
         monitor='val_f1',
-        patience=15
+        patience=10,
         mode='max'
     )
 
     trainer = Trainer(
-        max_epochs=500,
+        max_epochs=cfg['epoches'],
         devices='auto',
         accelerator='auto',
         log_every_n_steps=1,

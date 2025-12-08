@@ -1,17 +1,17 @@
 import torch
 import torch.nn as nn
 from nlp_agh.transformer.dataset import prepare_mask
+from nlp_agh.transformer.transformer import Transformer
 
 
 class ClassificationTransformer(nn.Module):
-    def __init__(self, base_transformer: nn.Module, d_model: int, num_classes: int, classifier_dropout: float = 0.1):
+    def __init__(self, base_transformer: Transformer, d_model: int, num_classes: int, classifier_dropout: float = 0.3):
         super().__init__()
         self.base_transformer = base_transformer
         self.classifier = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.GELU(),
             nn.Dropout(classifier_dropout),
-            nn.Linear(d_model, num_classes)
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, num_classes),
         )
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor = None):
